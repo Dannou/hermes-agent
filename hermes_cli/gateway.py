@@ -5470,6 +5470,13 @@ def _set_platform_unauthorized_dm_behavior(platform_key: str, behavior: str) -> 
 
 def _setup_standard_platform(platform: dict):
     """Interactive setup for Telegram, Discord, or Slack."""
+    # Shared with the dashboard/Desktop channel forms so all three surfaces
+    # agree on which knobs are optional and what their defaults are.
+    from hermes_cli.messaging_env_meta import (
+        describe_default,
+        messaging_env_ui_hints,
+    )
+
     emoji = platform["emoji"]
     label = platform["label"]
     token_var = platform["token_var"]
@@ -5522,7 +5529,23 @@ def _setup_standard_platform(platform: dict):
 
     allowed_val_set = None  # Track if user set an allowlist (for home channel offer)
 
-    for var in platform["vars"]:
+    # The optional per-platform knobs (home channel, reply mode, proxy) all have
+    # a working default, and /sethome sets the home channel on the first chat.
+    # Asking about each one inline made a 2-field setup feel like a 5-field one,
+    # so they move behind a single opt-in — matching the dashboard/Desktop
+    # "Advanced" disclosure. Same metadata source, so the surfaces can't drift.
+    setup_vars = list(platform["vars"])
+    advanced_vars = [
+        v
+        for v in setup_vars
+        if not v.get("is_allowlist")
+        and v["name"] != token_var
+        and messaging_env_ui_hints(v["name"])["advanced"]
+    ]
+    if advanced_vars:
+        setup_vars = [v for v in setup_vars if v not in advanced_vars]
+
+    for var in setup_vars:
         print()
         print_info(f"  {var['help']}")
         existing = get_env_value(var["name"])
@@ -5641,6 +5664,43 @@ def _setup_standard_platform(platform: dict):
         ):
             save_env_value(home_var, first_id)
             print_success(f"  Home channel set to {first_id}")
+
+    # Optional knobs, behind one question instead of several. Declining leaves
+    # every one of them at the documented default shown in the summary.
+    if advanced_vars:
+        print()
+        print_info(f"  {label} has {len(advanced_vars)} optional setting(s) with working defaults:")
+        for var in advanced_vars:
+            current = get_env_value(var["name"])
+            described = describe_default(var["name"])
+            if current:
+                state = f"currently {current}"
+            else:
+                state = described or "unset"
+            print_info(f"    • {var['name']} — {state}")
+        if home_var in {v["name"] for v in advanced_vars} and not get_env_value(home_var):
+            print_info("    (the home channel is also set by /sethome in your first chat)")
+
+        if prompt_yes_no("  Configure these now?", False):
+            for var in advanced_vars:
+                print()
+                print_info(f"  {var['help']}")
+                existing = get_env_value(var["name"])
+                if existing:
+                    print_info(f"  Current: {existing}")
+                described = describe_default(var["name"])
+                if described and not existing:
+                    print_info(f"  Leave empty for the {described}")
+                value = prompt(
+                    f"  {var['prompt']}", password=var.get("password", False)
+                )
+                if value:
+                    save_env_value(var["name"], value)
+                    print_success(f"  Saved {var['name']}")
+                else:
+                    print_info("  Left at default")
+        else:
+            print_info("  Using defaults — change later with 'hermes config set <VAR> <value>'")
 
     print()
     print_success(f"{emoji} {label} configured!")

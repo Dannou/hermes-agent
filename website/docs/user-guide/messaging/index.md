@@ -141,6 +141,8 @@ hermes gateway setup        # Interactive setup for all messaging platforms
 
 This walks you through configuring each platform with arrow-key selection, shows which platforms are already configured, and offers to start/restart the gateway when done.
 
+The wizard only asks for what a platform genuinely needs — its token, server URL, and allowlist. The optional per-platform knobs (home channel, reply mode, proxy) all have working defaults, so they're grouped behind a single "Configure these now?" question that lists each one's current effective value. Decline it and every knob keeps its default; you can change any of them later with `hermes config set <VAR> <value>`, and the home channel is set for you the first time you run `/sethome` in a chat.
+
 ## Gateway Commands
 
 ```bash
