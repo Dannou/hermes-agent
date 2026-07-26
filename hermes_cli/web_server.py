@@ -8566,15 +8566,74 @@ def _catalog_lookup(platform_id: str) -> dict[str, Any] | None:
     return None
 
 
+# suffix -> {default, choices}. Values mirror the gateway's own fallbacks:
+# PlatformConfig.reply_to_mode defaults to "first", the allow-all bypass is off
+# unless explicitly truthy, and the home-channel display name falls back to
+# "Home" (see gateway/config.py::_apply_env_overrides). Longer suffixes come
+# first so ``*_HOME_CHANNEL_NAME`` isn't matched by ``*_HOME_CHANNEL``.
+_MESSAGING_ENV_CONVENTIONS: dict[str, dict[str, Any]] = {
+    "_REPLY_TO_MODE": {"default": "first", "choices": ["off", "first", "all"]},
+    "_ALLOW_ALL_USERS": {"default": "false", "choices": ["false", "true"]},
+    "_HOME_CHANNEL_THREAD_ID": {},
+    "_HOME_CHANNEL_NAME": {"default": "Home"},
+    "_HOME_CHANNEL": {},
+    "_PROXY": {},
+}
+
+# Advanced keys that don't fit a suffix convention. WHATSAPP_ENABLED/_MODE are
+# driven by the platform toggle and the bridge's own onboarding, so a user
+# typing into them by hand is the exception, not the setup path. Defaults match
+# the runtime fallbacks (gateway/platforms/whatsapp_common.py reads
+# WHATSAPP_MODE with a "self-chat" default; WHATSAPP_ENABLED is off unless
+# explicitly truthy).
+_MESSAGING_ENV_ADVANCED_KEYS: dict[str, dict[str, Any]] = {
+    "WHATSAPP_ENABLED": {"default": "false", "choices": ["false", "true"]},
+    "WHATSAPP_MODE": {"default": "self-chat", "choices": ["bot", "self-chat"]},
+}
+
+
+def _messaging_env_ui_hints(key: str) -> dict[str, Any]:
+    """Convention-based UI hints for a platform env var.
+
+    Every messaging platform ships the same handful of optional knobs
+    (``*_HOME_CHANNEL``, ``*_ALLOW_ALL_USERS``, ``*_REPLY_TO_MODE``, …). They
+    all have a working default, or Hermes sets them for the user later
+    (``/sethome`` on the first chat writes the home channel), so a setup form
+    that lists them next to the bot token reads as four more things you must
+    fill in. Marking them advanced lets the UIs collapse them, and publishing
+    the effective default/choices lets the UIs show what Hermes actually does
+    when the field is left blank instead of an empty box labelled with the raw
+    env var name.
+
+    Suffix-driven so plugin adapters we don't enumerate here get the same
+    treatment for free.
+    """
+    hints: dict[str, Any] = {"advanced": False, "default": "", "choices": []}
+    explicit = _MESSAGING_ENV_ADVANCED_KEYS.get(key)
+    if explicit is not None:
+        hints.update(explicit)
+        hints["advanced"] = True
+        return hints
+    for suffix, meta in _MESSAGING_ENV_CONVENTIONS.items():
+        if key.endswith(suffix):
+            hints.update(meta)
+            hints["advanced"] = True
+            break
+    return hints
+
+
 def _messaging_env_info(key: str) -> dict[str, Any]:
     info = OPTIONAL_ENV_VARS.get(key) or _MESSAGING_ENV_FALLBACKS.get(key) or {}
+    hints = _messaging_env_ui_hints(key)
     return {
         "description": info.get("description", ""),
         "prompt": info.get("prompt", key),
         "help": info.get("help", ""),
         "url": info.get("url"),
         "is_password": info.get("password", False),
-        "advanced": info.get("advanced", False),
+        "advanced": bool(info.get("advanced", hints["advanced"])),
+        "default": info.get("default", hints["default"]),
+        "choices": list(info.get("choices", hints["choices"])),
     }
 
 

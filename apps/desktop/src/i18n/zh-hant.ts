@@ -1214,6 +1214,11 @@ export const zhHant = defineLocale({
     required: '必填',
     recommended: '建議',
     advanced: count => `進階 (${count})`,
+    advancedHint:
+      '選填。Hermes 已為這些欄位提供可用的預設值 — 首次在聊天中執行 /sethome 時會自動設定主頻道。',
+    useDefault: current => `預設 (${current})`,
+    useDefaultPlain: '預設',
+    choiceDefault: choice => `${choice}（預設）`,
     noTokenNeeded: '此平台不需要在此填寫 Token。請按照上方設定指南操作，然後在下方啟用。',
     enabled: '已啟用',
     disabled: '已停用',

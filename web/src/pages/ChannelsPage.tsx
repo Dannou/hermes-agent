@@ -1,9 +1,20 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   AlertTriangle,
   Bot,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   Info,
   PlugZap,
@@ -21,6 +32,7 @@ import { Button } from "@nous-research/ui/ui/components/button";
 import { Card, CardContent } from "@nous-research/ui/ui/components/card";
 import { Input } from "@nous-research/ui/ui/components/input";
 import { Label } from "@nous-research/ui/ui/components/label";
+import { Select, SelectOption } from "@nous-research/ui/ui/components/select";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
 import { Switch } from "@nous-research/ui/ui/components/switch";
 import { Toast } from "@nous-research/ui/ui/components/toast";
@@ -129,6 +141,101 @@ function normalizeWhatsAppMode(mode: unknown): "bot" | "self-chat" | null {
   return mode === "bot" || mode === "self-chat" ? mode : null;
 }
 
+/**
+ * One row in the channel config modal.
+ *
+ * Fields with a fixed `choices` set (reply mode, allow-all) render as a Select
+ * pre-selected to the backend's effective default instead of a free-text box
+ * whose only hint is the raw env var name. Blank still means "keep whatever is
+ * already there", so the Select carries an explicit "use default" entry.
+ */
+function ChannelField({
+  draftEnv,
+  field,
+  fieldErrors,
+  setDraftEnv,
+  setFieldErrors,
+}: {
+  draftEnv: Record<string, string>;
+  field: MessagingPlatformEnvVar;
+  fieldErrors: Record<string, string>;
+  setDraftEnv: Dispatch<SetStateAction<Record<string, string>>>;
+  setFieldErrors: Dispatch<SetStateAction<Record<string, string>>>;
+}) {
+  const setValue = (nextValue: string) => {
+    setDraftEnv((prev) => ({ ...prev, [field.key]: nextValue }));
+    setFieldErrors((prev) => {
+      if (!prev[field.key]) return prev;
+      const next = { ...prev };
+      delete next[field.key];
+      return next;
+    });
+  };
+
+  const currentOrDefault = field.is_set
+    ? field.redacted_value || "current value"
+    : field.default || "";
+
+  return (
+    <div className="grid gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={`field-${field.key}`}>
+          {field.prompt || field.key}
+          {field.required ? " *" : ""}
+        </Label>
+        {field.help && (
+          <span
+            aria-label={field.help}
+            className="inline-flex text-muted-foreground hover:text-foreground"
+            role="img"
+            title={field.help}
+          >
+            <Info className="h-3.5 w-3.5" />
+          </span>
+        )}
+      </div>
+      {field.description && (
+        <span className="text-xs text-muted-foreground">{field.description}</span>
+      )}
+      {field.choices.length > 0 ? (
+        <Select
+          id={`field-${field.key}`}
+          onValueChange={setValue}
+          value={draftEnv[field.key] ?? ""}
+        >
+          <SelectOption value="">
+            {currentOrDefault ? `Default (${currentOrDefault})` : "Default"}
+          </SelectOption>
+          {field.choices.map((choice) => (
+            <SelectOption key={choice} value={choice}>
+              {choice === field.default ? `${choice} (default)` : choice}
+            </SelectOption>
+          ))}
+        </Select>
+      ) : (
+        <Input
+          id={`field-${field.key}`}
+          type={field.is_password ? "password" : "text"}
+          className="text-base leading-6 sm:text-xs sm:leading-4"
+          placeholder={
+            field.is_set
+              ? field.redacted_value || "•••••• (set — leave blank to keep)"
+              : field.default
+                ? `Default: ${field.default}`
+                : field.key
+          }
+          value={draftEnv[field.key] ?? ""}
+          aria-invalid={Boolean(fieldErrors[field.key])}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => setValue(e.target.value)}
+        />
+      )}
+      {fieldErrors[field.key] && (
+        <span className="text-xs text-destructive">{fieldErrors[field.key]}</span>
+      )}
+    </div>
+  );
+}
+
 export default function ChannelsPage() {
   const [platforms, setPlatforms] = useState<MessagingPlatform[]>([]);
   const [envPath, setEnvPath] = useState("~/.hermes/.env");
@@ -143,12 +250,25 @@ export default function ChannelsPage() {
   const [editing, setEditing] = useState<MessagingPlatform | null>(null);
   const [draftEnv, setDraftEnv] = useState<Record<string, string>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
   const closeEdit = useCallback(() => {
     setEditing(null);
     setFieldErrors({});
   }, []);
   const editModalRef = useModalBehavior({ open: editing !== null, onClose: closeEdit });
+
+  // Required credentials stay in the form; the per-platform knobs that already
+  // have working defaults (reply mode, allow-all, home channel) collapse behind
+  // "Advanced" so the setup form is just the fields you must actually fill in.
+  const primaryFields = useMemo(
+    () => (editing?.env_vars ?? []).filter((f) => f.required || !f.advanced),
+    [editing],
+  );
+  const advancedFields = useMemo(
+    () => (editing?.env_vars ?? []).filter((f) => !f.required && f.advanced),
+    [editing],
+  );
 
   // Per-card busy + restart-needed tracking
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -180,6 +300,7 @@ export default function ChannelsPage() {
     });
     setDraftEnv(initial);
     setFieldErrors({});
+    setShowAdvanced(false);
     setEditing(platform);
   };
 
@@ -448,58 +569,52 @@ export default function ChannelsPage() {
               <p className="text-xs text-muted-foreground">
                 {editing.description}
               </p>
-              {editing.env_vars.map((field: MessagingPlatformEnvVar) => (
-                <div className="grid gap-1.5" key={field.key}>
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor={`field-${field.key}`}>
-                      {field.prompt || field.key}
-                      {field.required ? " *" : ""}
-                    </Label>
-                    {field.help && (
-                      <span
-                        aria-label={field.help}
-                        className="inline-flex text-muted-foreground hover:text-foreground"
-                        role="img"
-                        title={field.help}
-                      >
-                        <Info className="h-3.5 w-3.5" />
-                      </span>
-                    )}
-                  </div>
-                  {field.description && (
-                    <span className="text-xs text-muted-foreground">
-                      {field.description}
-                    </span>
-                  )}
-                  <Input
-                    id={`field-${field.key}`}
-                    type={field.is_password ? "password" : "text"}
-                    className="text-base leading-6 sm:text-xs sm:leading-4"
-                    placeholder={
-                      field.is_set
-                        ? field.redacted_value || "•••••• (set — leave blank to keep)"
-                        : field.key
-                    }
-                    value={draftEnv[field.key] ?? ""}
-                    aria-invalid={Boolean(fieldErrors[field.key])}
-                    onChange={(e) => {
-                      const nextValue = e.target.value;
-                      setDraftEnv((prev) => ({ ...prev, [field.key]: nextValue }));
-                      setFieldErrors((prev) => {
-                        if (!prev[field.key]) return prev;
-                        const next = { ...prev };
-                        delete next[field.key];
-                        return next;
-                      });
-                    }}
-                  />
-                  {fieldErrors[field.key] && (
-                    <span className="text-xs text-destructive">
-                      {fieldErrors[field.key]}
-                    </span>
-                  )}
-                </div>
+              {primaryFields.map((field: MessagingPlatformEnvVar) => (
+                <ChannelField
+                  draftEnv={draftEnv}
+                  fieldErrors={fieldErrors}
+                  key={field.key}
+                  field={field}
+                  setDraftEnv={setDraftEnv}
+                  setFieldErrors={setFieldErrors}
+                />
               ))}
+
+              {advancedFields.length > 0 && (
+                <div className="grid gap-3 border-t border-border pt-3">
+                  <button
+                    aria-expanded={showAdvanced}
+                    className="flex items-center gap-1.5 text-left text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowAdvanced((v) => !v)}
+                    type="button"
+                  >
+                    {showAdvanced ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
+                    Advanced ({advancedFields.length})
+                  </button>
+                  {!showAdvanced && (
+                    <span className="text-xs text-muted-foreground">
+                      Optional. Hermes already uses working defaults for these —
+                      the home channel is set for you the first time you run{" "}
+                      <code className="font-courier">/sethome</code> in a chat.
+                    </span>
+                  )}
+                  {showAdvanced &&
+                    advancedFields.map((field: MessagingPlatformEnvVar) => (
+                      <ChannelField
+                        draftEnv={draftEnv}
+                        fieldErrors={fieldErrors}
+                        key={field.key}
+                        field={field}
+                        setDraftEnv={setDraftEnv}
+                        setFieldErrors={setFieldErrors}
+                      />
+                    ))}
+                </div>
+              )}
 
               <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
                 <Button

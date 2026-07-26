@@ -1246,6 +1246,11 @@ export const ja = defineLocale({
     required: '必須',
     recommended: '推奨',
     advanced: count => `詳細設定 (${count})`,
+    advancedHint:
+      '任意です。これらには既定値が設定されています。ホームチャンネルはチャットで最初に /sethome を実行したときに自動で設定されます。',
+    useDefault: current => `既定 (${current})`,
+    useDefaultPlain: '既定',
+    choiceDefault: choice => `${choice} (既定)`,
     noTokenNeeded:
       'このプラットフォームはここでトークンが必要ありません。上のセットアップガイドを使用してから、以下で有効にしてください。',
     enabled: '有効',

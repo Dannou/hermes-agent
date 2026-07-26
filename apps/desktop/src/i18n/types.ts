@@ -1158,6 +1158,10 @@ export interface Translations {
     required: string
     recommended: string
     advanced: (count: number) => string
+    advancedHint: string
+    useDefault: (current: string) => string
+    useDefaultPlain: string
+    choiceDefault: (choice: string) => string
     noTokenNeeded: string
     enabled: string
     disabled: string

@@ -195,6 +195,10 @@ export interface CustomEndpointValidationResponse {
 
 export interface MessagingEnvVarInfo {
   advanced: boolean
+  /** Fixed value set, when the field only accepts specific values. */
+  choices?: string[]
+  /** Effective value the gateway uses when this field is left blank. */
+  default?: string
   description: string
   is_password: boolean
   is_set: boolean

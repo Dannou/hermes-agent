@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { MessagingPlatformInfo } from '@/types/hermes'
+import type { MessagingEnvVarInfo, MessagingPlatformInfo } from '@/types/hermes'
 
 const getMessagingPlatforms = vi.fn()
 const updateMessagingPlatform = vi.fn()
@@ -38,6 +38,21 @@ function platform(patch: Partial<MessagingPlatformInfo> = {}): MessagingPlatform
     id: 'teams',
     name: 'Microsoft Teams',
     state: 'disabled',
+    ...patch
+  }
+}
+
+function envVar(patch: Partial<MessagingEnvVarInfo> = {}): MessagingEnvVarInfo {
+  return {
+    advanced: false,
+    description: '',
+    is_password: false,
+    is_set: false,
+    key: 'DISCORD_BOT_TOKEN',
+    prompt: 'Discord bot token',
+    redacted_value: null,
+    required: true,
+    url: null,
     ...patch
   }
 }
@@ -91,5 +106,118 @@ describe('MessagingView setup-guide link', () => {
     })
 
     await waitFor(() => expect(openExternalLink).toHaveBeenCalledWith(docsUrl))
+  })
+})
+
+describe('MessagingView field surfacing', () => {
+  // The Discord setup form used to list reply mode / allow-all / home channel
+  // next to the bot token as four more empty boxes labelled with raw env var
+  // names. They all have working defaults, so the backend now tags them
+  // advanced and the form must collapse them behind the disclosure.
+  it('keeps required credentials visible and hides advanced knobs until opened', async () => {
+    getMessagingPlatforms.mockResolvedValue({
+      platforms: [
+        platform({
+          env_vars: [
+            envVar({ key: 'DISCORD_BOT_TOKEN', prompt: 'Discord bot token', required: true }),
+            envVar({
+              advanced: true,
+              choices: ['off', 'first', 'all'],
+              default: 'first',
+              key: 'DISCORD_REPLY_TO_MODE',
+              prompt: 'Discord reply mode',
+              required: false
+            }),
+            envVar({
+              advanced: true,
+              default: 'Home',
+              key: 'DISCORD_HOME_CHANNEL_NAME',
+              prompt: 'Home channel display name',
+              required: false
+            })
+          ],
+          id: 'discord',
+          name: 'Discord'
+        })
+      ]
+    })
+
+    await renderMessaging()
+
+    // Labels come from the localized fieldCopy map keyed on the env var.
+    expect(await screen.findByLabelText('Bot token')).toBeTruthy()
+    expect(screen.queryByLabelText('Home channel name')).toBeNull()
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Advanced (2)'))
+    })
+
+    expect(screen.getByLabelText('Home channel name')).toBeTruthy()
+  })
+
+  // An empty optional box hinting only at the env var name tells the user
+  // nothing about what Hermes does when it's left blank.
+  it('shows the backend default instead of the raw key for a free-text knob', async () => {
+    getMessagingPlatforms.mockResolvedValue({
+      platforms: [
+        platform({
+          env_vars: [
+            envVar({
+              advanced: true,
+              default: 'Home',
+              key: 'DISCORD_HOME_CHANNEL_NAME',
+              prompt: 'Home channel display name',
+              required: false
+            })
+          ],
+          id: 'discord',
+          name: 'Discord'
+        })
+      ]
+    })
+
+    await renderMessaging()
+
+    await act(async () => {
+      fireEvent.click(await screen.findByText('Advanced (1)'))
+    })
+
+    const input = screen.getByLabelText('Home channel name') as HTMLInputElement
+    expect(input.placeholder).toBe('Default: Home')
+  })
+
+  // A knob with a fixed value set is a picker, not a free-text field — typing
+  // "banana" into DISCORD_REPLY_TO_MODE is silently ignored by the gateway.
+  it('renders a fixed-choice knob as a picker defaulted to the backend default', async () => {
+    getMessagingPlatforms.mockResolvedValue({
+      platforms: [
+        platform({
+          env_vars: [
+            envVar({
+              advanced: true,
+              choices: ['off', 'first', 'all'],
+              default: 'first',
+              key: 'DISCORD_REPLY_TO_MODE',
+              prompt: 'Discord reply mode',
+              required: false
+            })
+          ],
+          id: 'discord',
+          name: 'Discord'
+        })
+      ]
+    })
+
+    await renderMessaging()
+
+    await act(async () => {
+      fireEvent.click(await screen.findByText('Advanced (1)'))
+    })
+
+    // Radix renders the trigger as a combobox, never a free-text input.
+    const control = screen.getByLabelText('Reply style')
+    expect(control.getAttribute('role')).toBe('combobox')
+    expect(control.tagName).not.toBe('INPUT')
+    expect(control.textContent).toContain('Default (first)')
   })
 })

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { ErrorBanner } from '@/components/ui/error-state'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Tip } from '@/components/ui/tooltip'
 import {
@@ -72,33 +73,29 @@ const trimEdits = (edits: Record<string, string>): Record<string, string> =>
       .filter(([, v]) => v)
   )
 
-const FIELD_COPY: Record<string, { advanced?: boolean }> = {
-  TELEGRAM_PROXY: { advanced: true },
-  DISCORD_REPLY_TO_MODE: { advanced: true },
-  DISCORD_ALLOW_ALL_USERS: { advanced: true },
-  DISCORD_HOME_CHANNEL: { advanced: true },
-  DISCORD_HOME_CHANNEL_NAME: { advanced: true },
-  BLUEBUBBLES_ALLOW_ALL_USERS: { advanced: true },
-  MATTERMOST_ALLOW_ALL_USERS: { advanced: true },
-  MATTERMOST_HOME_CHANNEL: { advanced: true },
-  QQ_ALLOW_ALL_USERS: { advanced: true },
-  QQBOT_HOME_CHANNEL: { advanced: true },
-  QQBOT_HOME_CHANNEL_NAME: { advanced: true },
-  WHATSAPP_ENABLED: { advanced: true },
-  WHATSAPP_MODE: { advanced: true }
-}
-
+// The backend marks the per-platform convenience knobs (reply mode,
+// allow-all, home channel, proxy) advanced by convention in
+// hermes_cli/web_server.py, so plugin adapters we don't enumerate here get the
+// same treatment. Only localized copy lives on this side now.
 function fieldCopy(field: MessagingEnvVarInfo, m: Translations['messaging']) {
-  const copy = FIELD_COPY[field.key] || {}
   const localized = m.fieldCopy[field.key] || {}
 
   return {
     label: localized.label || field.prompt || field.key,
     help: localized.help || field.description,
-    placeholder: localized.placeholder || field.prompt,
-    advanced: Boolean(copy.advanced || field.advanced)
+    placeholder: localized.placeholder || defaultPlaceholder(field) || field.prompt,
+    advanced: Boolean(field.advanced)
   }
 }
+
+// A blank optional field is not empty — the gateway falls back to a documented
+// default. Show that instead of the raw env var name.
+const defaultPlaceholder = (field: MessagingEnvVarInfo) =>
+  field.default ? `Default: ${field.default}` : ''
+
+// Radix Select rejects an empty-string item value, so the "leave it alone"
+// entry needs a sentinel that maps back to '' on the way out.
+const DEFAULT_CHOICE = '__hermes_default__'
 
 export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...props }: MessagingViewProps) {
   const { t } = useI18n()
@@ -481,6 +478,11 @@ function PlatformDetail({
             <span>{m.advanced(hiddenCount)}</span>
             <DisclosureCaret open={showAdvanced} size="0.875rem" />
           </button>
+          {!showAdvanced && (
+            <p className="mt-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+              {m.advancedHint}
+            </p>
+          )}
           {showAdvanced && (
             <div className="mt-3 grid gap-1">
               {advancedFields.map(field => (
@@ -596,19 +598,44 @@ function MessagingField({
   const m = t.messaging
   const copy = fieldCopy(field, m)
   const fieldId = `messaging-field-${field.key}`
+  const choices = field.choices ?? []
+  // Blank means "leave whatever is already set", so a fixed-choice field needs
+  // an explicit no-op entry alongside its allowed values.
+  const currentOrDefault = field.is_set ? field.redacted_value || m.replaceValue : field.default || ''
 
   return (
     <ListRow
       action={
         <div className="flex items-center gap-2">
-          <Input
-            className={CREDENTIAL_CONTROL_CLASS}
-            id={fieldId}
-            onChange={event => onEdit(field.key, event.target.value)}
-            placeholder={field.is_set ? field.redacted_value || m.replaceValue : copy.placeholder}
-            type={field.is_password ? 'password' : 'text'}
-            value={edits[field.key] || ''}
-          />
+          {choices.length > 0 ? (
+            <Select
+              onValueChange={value => onEdit(field.key, value === DEFAULT_CHOICE ? '' : value)}
+              value={edits[field.key] || DEFAULT_CHOICE}
+            >
+              <SelectTrigger className={CREDENTIAL_CONTROL_CLASS} id={fieldId} size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={DEFAULT_CHOICE}>
+                  {currentOrDefault ? m.useDefault(currentOrDefault) : m.useDefaultPlain}
+                </SelectItem>
+                {choices.map(choice => (
+                  <SelectItem key={choice} value={choice}>
+                    {choice === field.default ? m.choiceDefault(choice) : choice}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              className={CREDENTIAL_CONTROL_CLASS}
+              id={fieldId}
+              onChange={event => onEdit(field.key, event.target.value)}
+              placeholder={field.is_set ? field.redacted_value || m.replaceValue : copy.placeholder}
+              type={field.is_password ? 'password' : 'text'}
+              value={edits[field.key] || ''}
+            />
+          )}
           {field.url && (
             <Tip label={m.openDocs}>
               <Button asChild className="size-8 shrink-0" variant="ghost">

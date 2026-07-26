@@ -1489,6 +1489,10 @@ export interface MessagingPlatformEnvVar {
   url: string | null;
   is_password: boolean;
   advanced: boolean;
+  /** Effective value the gateway uses when this field is left blank. */
+  default: string;
+  /** Fixed value set, when the field only accepts specific values. */
+  choices: string[];
 }
 
 export interface MessagingPlatform {

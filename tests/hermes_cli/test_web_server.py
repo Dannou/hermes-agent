@@ -3061,6 +3061,81 @@ class TestWebServerEndpoints:
         assert "GATEWAY_PROXY_URL" not in managed
         assert "GATEWAY_PROXY_URL" in _MESSAGING_KEYS_PAGE_KEYS
 
+    def test_required_platform_credentials_are_never_advanced(self):
+        """A card's required_env must stay in the primary form, never collapsed.
+
+        The UIs hide `advanced` fields behind a disclosure. If a required
+        credential were ever tagged advanced, the setup form would render with
+        no way to enter the thing the platform can't start without.
+        """
+        from hermes_cli.web_server import (
+            _messaging_env_info,
+            _messaging_platform_catalog,
+        )
+
+        for entry in _messaging_platform_catalog():
+            for key in entry["required_env"]:
+                assert not _messaging_env_info(key)["advanced"], (
+                    f"{entry['id']}: required {key} must not be advanced"
+                )
+
+    def test_optional_platform_knobs_are_advanced_with_published_defaults(self):
+        """Every platform's convenience knobs collapse and carry a default.
+
+        These are the fields that made the Discord setup form look like four
+        more mandatory questions. They all have a working fallback (or Hermes
+        sets them later via /sethome), so they must be marked advanced, and a
+        fixed-choice knob must publish its choices with the default among them.
+        """
+        from hermes_cli.web_server import (
+            _messaging_env_info,
+            _messaging_platform_catalog,
+        )
+
+        suffixes = ("_REPLY_TO_MODE", "_ALLOW_ALL_USERS", "_HOME_CHANNEL", "_PROXY")
+        seen = 0
+        for entry in _messaging_platform_catalog():
+            for key in entry["env_vars"]:
+                if key in entry["required_env"]:
+                    continue
+                if not any(key.endswith(suffix) for suffix in suffixes):
+                    continue
+                seen += 1
+                info = _messaging_env_info(key)
+                assert info["advanced"], f"{key} should be advanced"
+                if info["choices"]:
+                    assert info["default"] in info["choices"], (
+                        f"{key}: default {info['default']!r} not among {info['choices']}"
+                    )
+
+        assert seen >= 1, "catalog exposed no optional platform knobs to check"
+
+    def test_reply_mode_default_matches_gateway_platform_config(self):
+        """The published default must be what the gateway actually falls back to.
+
+        A UI that says "Default (first)" while the runtime uses something else
+        is worse than an empty box — it states a wrong fact confidently.
+        """
+        from gateway.config import PlatformConfig
+
+        from hermes_cli.web_server import _messaging_env_info
+
+        info = _messaging_env_info("DISCORD_REPLY_TO_MODE")
+        assert info["default"] == PlatformConfig().reply_to_mode
+        assert set(info["choices"]) == {"off", "first", "all"}
+
+    def test_home_channel_name_default_is_not_shadowed_by_home_channel(self):
+        """Suffix matching must prefer the longer, more specific suffix.
+
+        `*_HOME_CHANNEL_NAME` has a real default ("Home"); `*_HOME_CHANNEL` is
+        an ID with no default. Matching the short suffix first would drop the
+        name's default and show an empty hint.
+        """
+        from hermes_cli.web_server import _messaging_env_info
+
+        assert _messaging_env_info("DISCORD_HOME_CHANNEL_NAME")["default"] == "Home"
+        assert _messaging_env_info("DISCORD_HOME_CHANNEL")["default"] == ""
+
     def test_model_set_requires_confirmation_for_expensive_model(self, monkeypatch):
         monkeypatch.setattr(
             "hermes_cli.model_cost_guard.expensive_model_warning",

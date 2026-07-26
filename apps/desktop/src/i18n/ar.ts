@@ -1122,6 +1122,11 @@ export const ar = defineLocale({
     required: 'مطلوب',
     recommended: 'موصى به',
     advanced: count => `${count} إعدادات متقدمة`,
+    advancedHint:
+      'اختياري. يستخدم Hermes بالفعل قيمًا افتراضية صالحة لهذه الحقول — وتُضبط قناة الرئيسية تلقائيًا عند تشغيل /sethome لأول مرة في محادثة.',
+    useDefault: current => `الافتراضي (${current})`,
+    useDefaultPlain: 'الافتراضي',
+    choiceDefault: choice => `${choice} (الافتراضي)`,
     noTokenNeeded: 'لا يحتاج رمز',
     enabled: 'مفعل',
     disabled: 'معطل',

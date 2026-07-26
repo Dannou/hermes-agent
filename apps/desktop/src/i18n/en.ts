@@ -1317,6 +1317,11 @@ export const en: Translations = {
     required: 'Required',
     recommended: 'Recommended',
     advanced: count => `Advanced (${count})`,
+    advancedHint:
+      'Optional. Hermes already uses working defaults for these — the home channel is set for you the first time you run /sethome in a chat.',
+    useDefault: current => `Default (${current})`,
+    useDefaultPlain: 'Default',
+    choiceDefault: choice => `${choice} (default)`,
     noTokenNeeded: 'This platform does not need a token here. Use the setup guide above, then enable it below.',
     enabled: 'Enabled',
     disabled: 'Disabled',

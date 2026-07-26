@@ -1511,6 +1511,11 @@ export const zh: Translations = {
     required: '必填',
     recommended: '推荐',
     advanced: count => `高级 (${count})`,
+    advancedHint:
+      '选填。Hermes 已为这些字段提供可用的默认值 — 首次在聊天中执行 /sethome 时会自动设置主频道。',
+    useDefault: current => `默认 (${current})`,
+    useDefaultPlain: '默认',
+    choiceDefault: choice => `${choice}（默认）`,
     noTokenNeeded: '此平台无需在此填写令牌。请按上方设置指南操作，然后在下方启用。',
     enabled: '已启用',
     disabled: '已禁用',
